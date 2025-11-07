@@ -81,6 +81,7 @@ func DecodePDR(b []byte) (*PDR, error) {
 
 const (
 	PDI_UE_ADDR_IPV4 = iota + 1
+	PDI_UE_ADDR_IPV6 // WNC: IPv6 UE address support
 	PDI_F_TEID
 	PDI_SDF_FILTER
 	PDI_SRC_INTF
@@ -107,6 +108,9 @@ func DecodePDI(b []byte) (PDI, error) {
 		case PDI_UE_ADDR_IPV4:
 			pdi.UEAddr = make([]byte, 4)
 			copy(pdi.UEAddr, b[n:n+4])
+		case PDI_UE_ADDR_IPV6: // WNC: Handle IPv6 UE address
+			pdi.UEAddr = make([]byte, 16)
+			copy(pdi.UEAddr, b[n:n+16])
 		case PDI_F_TEID:
 			fteid, err := DecodeFTEID(b[n:attrLen])
 			if err != nil {
@@ -137,6 +141,7 @@ func DecodePDI(b []byte) (PDI, error) {
 const (
 	F_TEID_I_TEID = iota + 1
 	F_TEID_GTPU_ADDR_IPV4
+	F_TEID_GTPU_ADDR_IPV6 // WNC: IPv6 GTP-U endpoint support
 )
 
 type FTEID struct {
@@ -158,6 +163,9 @@ func DecodeFTEID(b []byte) (FTEID, error) {
 		case F_TEID_GTPU_ADDR_IPV4:
 			fteid.GTPuAddr = make([]byte, 4)
 			copy(fteid.GTPuAddr, b[n:n+4])
+		case F_TEID_GTPU_ADDR_IPV6: // WNC: Handle IPv6 GTP-U endpoint
+			fteid.GTPuAddr = make([]byte, 16)
+			copy(fteid.GTPuAddr, b[n:n+16])
 		}
 		b = b[hdr.Len.Align():]
 	}
@@ -223,8 +231,13 @@ const (
 	FLOW_DESCRIPTION_SRC_MASK
 	FLOW_DESCRIPTION_DEST_IPV4
 	FLOW_DESCRIPTION_DEST_MASK
+	FLOW_DESCRIPTION_SRC_IPV6      // WNC: IPv6 source address support
+	FLOW_DESCRIPTION_SRC_IPV6_MASK // WNC: IPv6 source mask support
+	FLOW_DESCRIPTION_DEST_IPV6     // WNC: IPv6 destination address support
+	FLOW_DESCRIPTION_DEST_IPV6_MASK // WNC: IPv6 destination mask support
 	FLOW_DESCRIPTION_SRC_PORT
 	FLOW_DESCRIPTION_DEST_PORT
+	FLOW_DESCRIPTION_FLOW_LABEL    // WNC: IPv6 flow label support
 )
 
 const (
@@ -239,13 +252,16 @@ const (
 )
 
 type FlowDesc struct {
-	Action   uint8
-	Dir      uint8
-	Proto    uint8
-	Src      net.IPNet
-	Dst      net.IPNet
-	SrcPorts [][]uint16
-	DstPorts [][]uint16
+	Action     uint8
+	Dir        uint8
+	Proto      uint8
+	Src        net.IPNet      // IPv4 source
+	Dst        net.IPNet      // IPv4 destination
+	SrcIPv6    net.IPNet      // WNC: IPv6 source
+	DstIPv6    net.IPNet      // WNC: IPv6 destination
+	FlowLabel  uint32         // WNC: IPv6 flow label (20-bit)
+	SrcPorts   [][]uint16
+	DstPorts   [][]uint16
 }
 
 func DecodeFlowDesc(b []byte) (FlowDesc, error) {
@@ -275,6 +291,20 @@ func DecodeFlowDesc(b []byte) (FlowDesc, error) {
 		case FLOW_DESCRIPTION_DEST_MASK:
 			fd.Dst.Mask = make([]byte, 4)
 			copy(fd.Dst.Mask, b[n:n+4])
+		case FLOW_DESCRIPTION_SRC_IPV6: // WNC: IPv6 source address
+			fd.SrcIPv6.IP = make([]byte, 16)
+			copy(fd.SrcIPv6.IP, b[n:n+16])
+		case FLOW_DESCRIPTION_SRC_IPV6_MASK: // WNC: IPv6 source mask
+			fd.SrcIPv6.Mask = make([]byte, 16)
+			copy(fd.SrcIPv6.Mask, b[n:n+16])
+		case FLOW_DESCRIPTION_DEST_IPV6: // WNC: IPv6 destination address
+			fd.DstIPv6.IP = make([]byte, 16)
+			copy(fd.DstIPv6.IP, b[n:n+16])
+		case FLOW_DESCRIPTION_DEST_IPV6_MASK: // WNC: IPv6 destination mask
+			fd.DstIPv6.Mask = make([]byte, 16)
+			copy(fd.DstIPv6.Mask, b[n:n+16])
+		case FLOW_DESCRIPTION_FLOW_LABEL: // WNC: IPv6 flow label
+			fd.FlowLabel = native.Uint32(b[n:n+4]) & 0xFFFFF // 20-bit mask
 		case FLOW_DESCRIPTION_SRC_PORT:
 			for n < attrLen {
 				v := native.Uint32(b[n:attrLen])
