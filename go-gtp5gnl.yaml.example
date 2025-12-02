@@ -1,0 +1,61 @@
+# go-gtp5gnl Configuration File
+#
+# This file contains system-specific kernel parameters needed to calculate
+# proper netlink message sizes for communication with the gtp5g kernel module.
+#
+# IMPORTANT: These values are system-specific and must be detected from your
+# running kernel. Use the provided detection script to generate this file:
+#
+#   ./scripts/detect_kernel_params.sh > gtp5gnl.yaml
+#
+# Or manually fill in the values using the instructions below.
+
+# System page size in bytes
+# How to retrieve: Run command: getconf PAGESIZE
+# Typical values: 4096 (x86_64), 8192 (ARM64), 16384 (PowerPC)
+page_size: 4096
+
+# Maximum number of SKB fragments (CONFIG_MAX_SKB_FRAGS)
+# How to retrieve: Run command: grep CONFIG_MAX_SKB_FRAGS /boot/config-$(uname -r)
+# Typical values: 16, 17, 18, 32, 45
+# If not found in config file, use default: 17
+max_skb_frags: 17
+
+# SKB shared info overhead in bytes (calculated from max_skb_frags)
+# How to retrieve: This is calculated as SKB_DATA_ALIGN(sizeof(struct skb_shared_info))
+#   Formula: SKB_DATA_ALIGN(48 + (16 * max_skb_frags))
+#   Where SKB_DATA_ALIGN(x) = (x + 63) & ~63  (align to 64-byte boundary)
+#
+# Quick reference table:
+#   max_skb_frags=16 -> skb_overhead=320
+#   max_skb_frags=17 -> skb_overhead=320
+#   max_skb_frags=18 -> skb_overhead=384
+#   max_skb_frags=32 -> skb_overhead=576
+#   max_skb_frags=45 -> skb_overhead=768
+#
+# Or use the detection script which calculates this automatically
+skb_overhead: 320
+
+# Netlink message header length in bytes
+# How to retrieve: This is sizeof(struct nlmsghdr), always 16 bytes on Linux
+# You can verify with: echo '#include <linux/netlink.h>' | gcc -E -dM - | grep NLMSG_HDRLEN
+# Standard value: 16 (do not change unless you have a very unusual system)
+nlmsg_hdrlen: 16
+
+# ============================================================================
+# Calculated values (informational only, not used by the library)
+# ============================================================================
+# These are calculated from the above values:
+#
+# if page_size < 8192:
+#     base_size = page_size
+# else:
+#     base_size = 8192
+#
+# nlmsg_good_size = base_size - skb_overhead
+# nlmsg_default_size = nlmsg_good_size - nlmsg_hdrlen
+#
+# For the example values above:
+#   base_size = 4096 (since page_size=4096 < 8192)
+#   nlmsg_good_size = 4096 - 320 = 3776
+#   nlmsg_default_size = 3776 - 16 = 3760

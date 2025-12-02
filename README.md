@@ -2,17 +2,58 @@
 
 go-gtp5gnl provides a netlink library about gtp5g for Go.
 
+## ⚠️ IMPORTANT: Configuration Required Before Use
+
+**WNC: Before building or using this library, you MUST generate a system-specific configuration file.**
+
+This library requires kernel-specific parameters that vary by system. Run the detection script on your target system:
+
+```bash
+cd go-gtp5gnl
+./scripts/detect_kernel_params.sh > go-gtp5gnl.yaml
+```
+
+**Why this is needed:**
+- Different systems have different page sizes (4KB, 8KB, 16KB, 64KB)
+- Kernel configurations vary (CONFIG_MAX_SKB_FRAGS can be 16, 17, 18, etc.)
+- Using incorrect values causes netlink communication failures
+
+**Verify your configuration:**
+```bash
+./scripts/detect_kernel_params.sh --verify
+```
+
+**For detailed instructions, see [CONFIG.md](CONFIG.md)**
+
 ## License
 
 This software is released under the Apache 2.0 License, see LICENSE
 
 ## Usage
-### List all PDR/FAR/QER
+
+### WNC: Debug Mode
+
+To enable debug logging and see configuration details:
+
+```bash
+export GTP5GNL_DEBUG=1
+
 ```
+
+This will show:
+- Which config file was loaded
+- Detected kernel parameters (PAGE_SIZE, MAX_SKB_FRAGS, SKB_OVERHEAD, NLMSG_HDRLEN)
+- Calculated netlink message sizes
+
+### Command-line Tools
+
+#### List all PDR/FAR/QER
+```bash
 # ./gtp5g-tunnel list [pdr/far/qer]
 ./gtp5g-tunnel list pdr
 ```
-### Get/Del/Add/Mod PDR/FAR/QER
+
+#### Get/Del/Add/Mod PDR/FAR/QER
 ```
 # ./gtp5g-tunnel [get/del/add/mod] [PDR/FAR/QER] [interface_name] [seid] [id] [option]
 ./gtp5g-tunnel add pdr upfgtp0 1 3 --pcd 99

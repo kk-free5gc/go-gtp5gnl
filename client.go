@@ -22,5 +22,9 @@ func NewClient(conn *nl.Conn, mux *nl.Mux) (*Client, error) {
 }
 
 func (c *Client) Do(req *nl.Request) ([]nl.Msg, error) {
+	// WNC: Use test hook if set (for testing netlink request serialization)
+	if testClientDoHook != nil {
+		return testClientDoHook(req)
+	}
 	return c.Client.Do(req)
 }

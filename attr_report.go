@@ -92,14 +92,60 @@ type VolumeMeasurement struct {
 	DownlinkPktNum uint64
 }
 
-// The maximun netlink message size is 16K, and the body for the attibutes are 7856 Bytes
+// WNC: Netlink message size constants
 const (
-	MAX_NETLINK_MSG_BODY_SIZE = 7856
-	NETLIMK_ATTR_HDR_SIZE     = 4
+	NETLIMK_ATTR_HDR_SIZE = 4
+
+	/* WNC: maxUsageReportsPerMsg caps the URR batch size for safety.
+	   The actual limit is calculated dynamically from available netlink message space,
+	   but we cap at 64 URRs as a practical upper bound. This prevents:
+	   - Memory exhaustion from extremely large batches
+	   - Excessive processing time for single messages
+	   - Edge cases in kernel netlink handling
+
+	   With proper configuration (go-gtp5gnl.yaml), the system will use the maximum
+	   safe batch size up to this cap based on actual kernel parameters. */
+	maxUsageReportsPerMsg = 64
 )
+
+// WNC: getMaxNetlinkMsgBodySize returns the maximum netlink message body size
+// based on the configured nlmsgGoodSize minus overhead for headers and fixed attributes.
+//
+// Calculation:
+//   nlmsgGoodSize (from config) - netlink overhead = available payload space
+//   Overhead = 16 (nl header) + 4 (genl header) + 8 (LINK attr) + 8 (URR_NUM attr) = 36 bytes
+//
+// This replaces the old hardcoded MAX_NETLINK_MSG_BODY_SIZE = 7856 which was incorrect
+// for systems with different page sizes or kernel configurations.
+func getMaxNetlinkMsgBodySize() int {
+	const (
+		nlHeaderSize   = 16 // nl.Header size
+		genlHeaderSize = 4  // genl.Header size
+		linkAttrSize   = 8  // LINK attribute: 4 (header) + 4 (u32) aligned
+		urrNumAttrSize = 8  // URR_NUM attribute: 4 (header) + 4 (u32) aligned
+	)
+
+	overhead := nlHeaderSize + genlHeaderSize + linkAttrSize + urrNumAttrSize
+	maxBodySize := int(nlmsgGoodSize) - overhead
+
+	return maxBodySize
+}
+
+/*
+WNC: Test hook to override MaxNetlinkUsageReportNum return value.
+
+	When non-nil, MaxNetlinkUsageReportNum returns this value instead of calculating.
+	Used to test guard logic for edge cases (zero/negative batch sizes).
+*/
+var testMaxBatchSizeHook *int
 
 // The netlink attribute size of UR need to count the UR header(4) + size of the attributes (and it's header) in UR
 func MaxNetlinkUsageReportNum() int {
+	// WNC: Allow test override to force edge cases
+	if testMaxBatchSizeHook != nil {
+		return *testMaxBatchSizeHook
+	}
+
 	size := NETLIMK_ATTR_HDR_SIZE // UR attr header
 
 	size += NETLIMK_ATTR_HDR_SIZE         // UR_URRID attr header
@@ -134,7 +180,78 @@ func MaxNetlinkUsageReportNum() int {
 	size += NETLIMK_ATTR_HDR_SIZE         // UR_SEID attr header
 	size += int(unsafe.Sizeof(uint64(0))) // UR_SEID attr data
 
-	return MAX_NETLINK_MSG_BODY_SIZE / size
+	// WNC: Calculate maximum URRs based on dynamic netlink message size
+	maxBodySize := getMaxNetlinkMsgBodySize()
+	rawCalculatedLimit := maxBodySize / size
+
+	// WNC: Return the minimum of calculated limit and safe batch size cap
+	if rawCalculatedLimit > maxUsageReportsPerMsg {
+		return maxUsageReportsPerMsg
+	}
+	return rawCalculatedLimit
+}
+
+/*
+WNC: maxURRPayload returns the maximum safe payload size for URR batching.
+This is NLMSG_GOODSIZE minus the overhead for netlink/genl headers and fixed attributes.
+
+The calculation:
+  - nlmsgGoodSize: typically 8192 bytes (from linux/netlink.h)
+  - Netlink header: 16 bytes (nl.Header)
+  - Generic netlink header: 4 bytes (genl.Header)
+  - LINK attribute: 4 (attr header) + 4 (u32 value) = 8 bytes aligned
+  - URR_NUM attribute: 4 (attr header) + 4 (u32 value) = 8 bytes aligned
+  - Total overhead: 16 + 4 + 8 + 8 = 36 bytes
+  - Available payload: nlmsgGoodSize - 36
+
+This ensures each netlink message stays within the kernel's safe size limit.
+*/
+func maxURRPayload() int {
+	const (
+		nlHeaderSize   = 16 // nl.Header size (from msg.go)
+		genlHeaderSize = 4  // genl.Header size (genl.SizeofHeader)
+		linkAttrSize   = 8  // LINK attribute: 4 (header) + 4 (u32) aligned
+		urrNumAttrSize = 8  // URR_NUM attribute: 4 (header) + 4 (u32) aligned
+	)
+
+	headerSlack := nlHeaderSize + genlHeaderSize + linkAttrSize + urrNumAttrSize
+	return int(nlmsgGoodSize) - headerSlack
+}
+
+/*
+WNC: estimateURRTLVSize calculates the serialized size of a single URR_MULTI_SEID_URRID TLV.
+
+The structure is:
+  URR_MULTI_SEID_URRID (nested attribute)
+    ├─ Outer TLV header: 4 bytes
+    ├─ URR_ID: 4 (header) + 4 (u32) = 8 bytes
+    └─ URR_SEID: 4 (header) + 8 (u64) = 12 bytes
+  Total unaligned: 4 + 8 + 12 = 24 bytes
+  Total aligned: 24 bytes (already 4-byte aligned)
+
+This matches the actual encoding in getMultiReportsOIDChunk where each TLV contains
+nested URR_ID (u32) and URR_SEID (u64) attributes.
+*/
+func estimateURRTLVSize() int {
+	const (
+		attrHeaderSize = 4 // nl.AttrHdr size
+	)
+
+	// Outer URR_MULTI_SEID_URRID attribute header
+	size := attrHeaderSize
+
+	// URR_ID nested attribute: header + u32 value
+	urrIdSize := attrHeaderSize + 4
+	size += urrIdSize
+
+	// URR_SEID nested attribute: header + u64 value
+	urrSeidSize := attrHeaderSize + 8
+	size += urrSeidSize
+
+	// Align to 4-byte boundary (netlink requirement)
+	alignedSize := (size + 3) &^ 3
+
+	return alignedSize
 }
 
 func decodeVolumeMeasurement(b []byte) (VolumeMeasurement, error) {
