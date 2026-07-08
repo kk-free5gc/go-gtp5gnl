@@ -85,15 +85,17 @@ const (
 	PDI_F_TEID
 	PDI_SDF_FILTER
 	PDI_SRC_INTF
+	PDI_APP_ID // WNC: ApplicationID for RS monitoring
 	PDI_ETHERNET_PACKET_FILTER
 )
 
 type PDI struct {
-	SrcIntf *uint8
-	UEAddr  net.IP
-	FTEID   *FTEID
-	SDF     *SDFFilter
-	EPFs    []EthPktFilter
+	SrcIntf       *uint8
+	UEAddr        net.IP
+	FTEID         *FTEID
+	SDF           *SDFFilter
+	EPFs          []EthPktFilter
+	ApplicationID string // WNC: ApplicationID for RS monitoring
 }
 
 func DecodePDI(b []byte) (PDI, error) {
@@ -132,6 +134,9 @@ func DecodePDI(b []byte) (PDI, error) {
 		case PDI_SRC_INTF:
 			v := b[n]
 			pdi.SrcIntf = &v
+		case PDI_APP_ID:
+			// WNC: Decode ApplicationID string
+			pdi.ApplicationID = string(b[n:attrLen])
 		}
 		b = b[hdr.Len.Align():]
 	}
@@ -231,13 +236,13 @@ const (
 	FLOW_DESCRIPTION_SRC_MASK
 	FLOW_DESCRIPTION_DEST_IPV4
 	FLOW_DESCRIPTION_DEST_MASK
-	FLOW_DESCRIPTION_SRC_IPV6      // WNC: IPv6 source address support
-	FLOW_DESCRIPTION_SRC_IPV6_MASK // WNC: IPv6 source mask support
-	FLOW_DESCRIPTION_DEST_IPV6     // WNC: IPv6 destination address support
+	FLOW_DESCRIPTION_SRC_IPV6       // WNC: IPv6 source address support
+	FLOW_DESCRIPTION_SRC_IPV6_MASK  // WNC: IPv6 source mask support
+	FLOW_DESCRIPTION_DEST_IPV6      // WNC: IPv6 destination address support
 	FLOW_DESCRIPTION_DEST_IPV6_MASK // WNC: IPv6 destination mask support
 	FLOW_DESCRIPTION_SRC_PORT
 	FLOW_DESCRIPTION_DEST_PORT
-	FLOW_DESCRIPTION_FLOW_LABEL    // WNC: IPv6 flow label support
+	FLOW_DESCRIPTION_FLOW_LABEL // WNC: IPv6 flow label support
 )
 
 const (
@@ -252,16 +257,16 @@ const (
 )
 
 type FlowDesc struct {
-	Action     uint8
-	Dir        uint8
-	Proto      uint8
-	Src        net.IPNet      // IPv4 source
-	Dst        net.IPNet      // IPv4 destination
-	SrcIPv6    net.IPNet      // WNC: IPv6 source
-	DstIPv6    net.IPNet      // WNC: IPv6 destination
-	FlowLabel  uint32         // WNC: IPv6 flow label (20-bit)
-	SrcPorts   [][]uint16
-	DstPorts   [][]uint16
+	Action    uint8
+	Dir       uint8
+	Proto     uint8
+	Src       net.IPNet // IPv4 source
+	Dst       net.IPNet // IPv4 destination
+	SrcIPv6   net.IPNet // WNC: IPv6 source
+	DstIPv6   net.IPNet // WNC: IPv6 destination
+	FlowLabel uint32    // WNC: IPv6 flow label (20-bit)
+	SrcPorts  [][]uint16
+	DstPorts  [][]uint16
 }
 
 func DecodeFlowDesc(b []byte) (FlowDesc, error) {

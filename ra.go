@@ -2,7 +2,9 @@ package gtp5gnl
 
 import (
 	"fmt"
+	"syscall"
 
+	"github.com/khirono/go-genl"
 	"github.com/khirono/go-nl"
 )
 
@@ -27,8 +29,18 @@ func (c *Client) InjectRA(linkID int, seid uint64, pdrID uint16, raPacket []byte
 		return fmt.Errorf("WNC: RA packet too short (%d bytes, minimum 48)", len(raPacket))
 	}
 
-	req := nl.NewRequest(c.ID, CMD_INJECT_RA)
-	req.Append(&nl.AttrList{
+	// WNC FIX: build the request like every other command (cf. features.go, pdr.go):
+	// NewRequest's 2nd arg is netlink FLAGS, and the command must be set via a
+	// genl.Header. The previous code passed CMD_INJECT_RA as the flags value and never
+	// appended a genl.Header, so the kernel saw cmd=0 (UNSPEC), never routed to
+	// gtp5g_genl_inject_ra, and rejected the message with EINVAL before the handler ran.
+	flags := syscall.NLM_F_ACK
+	req := nl.NewRequest(c.ID, flags)
+	err := req.Append(genl.Header{Cmd: CMD_INJECT_RA})
+	if err != nil {
+		return err
+	}
+	err = req.Append(&nl.AttrList{
 		{
 			Type:  LINK,
 			Value: nl.AttrU32(linkID),
@@ -46,8 +58,11 @@ func (c *Client) InjectRA(linkID int, seid uint64, pdrID uint16, raPacket []byte
 			Value: nl.AttrBytes(raPacket),
 		},
 	})
+	if err != nil {
+		return err
+	}
 
-	_, err := c.Do(req)
+	_, err = c.Do(req)
 	if err != nil {
 		return fmt.Errorf("WNC: Failed to inject RA via netlink: %w", err)
 	}

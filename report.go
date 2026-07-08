@@ -173,8 +173,8 @@ func init() {
 	if os.Getenv("GTP5GNL_DEBUG") == "1" {
 		DebugLogging = true
 	}
-	// WNC: 25-11-28 VERSION MARKER - Always printed to verify correct go-gtp5gnl version is loaded
-	log.Printf("[go-gtp5gnl] WNC: 25-11-28 go-gtp5gnl report.go loaded (DebugLogging=%v)", DebugLogging)
+	// WNC: VERSION MARKER - Always printed to verify correct go-gtp5gnl version is loaded
+	log.Printf("[go-gtp5gnl] WNC: 25-12-12-15 go-gtp5gnl report.go loaded (DebugLogging=%v)", DebugLogging)
 }
 
 func GetReport(c *Client, link *Link, urrid uint64, seid uint64) ([]USAReport, error) {
@@ -388,8 +388,8 @@ func getMultiReportsOIDChunk(c *Client, link *Link, oids []OID, chunkOffset int)
 			chunkOffset, usedBytes, payloadBudget, consumedCount, tlvSize)
 	}
 
-	// WNC: 25-11-28 VERSION MARKER - Always printed to verify chunk function is being called
-	log.Printf("[go-gtp5gnl] WNC: 25-11-28 getMultiReportsOIDChunk called chunk[%d] URR_NUM=%d (consumed=%d from %d requested)",
+	// WNC: VERSION MARKER - Always printed to verify chunk function is being called
+	log.Printf("[go-gtp5gnl] WNC: 25-12-12-15 getMultiReportsOIDChunk called chunk[%d] URR_NUM=%d (consumed=%d from %d requested)",
 		chunkOffset, consumedCount, consumedCount, len(oids))
 
 	var attrs []nl.Attr

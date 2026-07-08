@@ -13,6 +13,8 @@ const (
 	URR_SEID
 	URR_VOLUME_THRESHOLD
 	URR_VOLUME_QUOTA
+	URR_EVENT_ID        // WNC: Event ID for event-based reporting (e.g., 26 for Router Solicitation)
+	URR_EVENT_THRESHOLD // WNC: Event Threshold for event-based reporting
 	URR_MULTI_SEID_URRID
 	URR_NUM
 )
@@ -46,14 +48,16 @@ type VolumeQuota struct {
 }
 
 type URR struct {
-	ID           uint32
-	Method       uint8
-	Trigger      uint32
-	Period       *uint32
-	Info         *uint8
-	SEID         *uint64
-	VolThreshold *VolumeThreshold
-	VolQuota     *VolumeQuota
+	ID             uint32
+	Method         uint8
+	Trigger        uint32
+	Period         *uint32
+	Info           *uint8
+	SEID           *uint64
+	VolThreshold   *VolumeThreshold
+	VolQuota       *VolumeQuota
+	EventID        *uint32 // WNC: Event ID for event-based reporting (e.g., 26 for Router Solicitation)
+	EventThreshold *uint32 // WNC: Event Threshold for event-based reporting
 }
 
 func DecodeURR(b []byte) (*URR, error) {
@@ -92,6 +96,14 @@ func DecodeURR(b []byte) (*URR, error) {
 				return nil, err
 			}
 			urr.VolQuota = &volumequota
+		case URR_EVENT_ID:
+			// WNC: Decode Event ID for event-based reporting
+			v := native.Uint32(b[n:attrLen])
+			urr.EventID = &v
+		case URR_EVENT_THRESHOLD:
+			// WNC: Decode Event Threshold for event-based reporting
+			v := native.Uint32(b[n:attrLen])
+			urr.EventThreshold = &v
 		}
 
 		b = b[hdr.Len.Align():]

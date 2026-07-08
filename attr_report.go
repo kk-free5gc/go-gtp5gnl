@@ -1,6 +1,8 @@
 package gtp5gnl
 
 import (
+	"encoding/binary"
+	"log"
 	"time"
 	"unsafe"
 
@@ -112,8 +114,9 @@ const (
 // based on the configured nlmsgGoodSize minus overhead for headers and fixed attributes.
 //
 // Calculation:
-//   nlmsgGoodSize (from config) - netlink overhead = available payload space
-//   Overhead = 16 (nl header) + 4 (genl header) + 8 (LINK attr) + 8 (URR_NUM attr) = 36 bytes
+//
+//	nlmsgGoodSize (from config) - netlink overhead = available payload space
+//	Overhead = 16 (nl header) + 4 (genl header) + 8 (LINK attr) + 8 (URR_NUM attr) = 36 bytes
 //
 // This replaces the old hardcoded MAX_NETLINK_MSG_BODY_SIZE = 7856 which was incorrect
 // for systems with different page sizes or kernel configurations.
@@ -222,12 +225,13 @@ func maxURRPayload() int {
 WNC: estimateURRTLVSize calculates the serialized size of a single URR_MULTI_SEID_URRID TLV.
 
 The structure is:
-  URR_MULTI_SEID_URRID (nested attribute)
-    ├─ Outer TLV header: 4 bytes
-    ├─ URR_ID: 4 (header) + 4 (u32) = 8 bytes
-    └─ URR_SEID: 4 (header) + 8 (u64) = 12 bytes
-  Total unaligned: 4 + 8 + 12 = 24 bytes
-  Total aligned: 24 bytes (already 4-byte aligned)
+
+	URR_MULTI_SEID_URRID (nested attribute)
+	  ├─ Outer TLV header: 4 bytes
+	  ├─ URR_ID: 4 (header) + 4 (u32) = 8 bytes
+	  └─ URR_SEID: 4 (header) + 8 (u64) = 12 bytes
+	Total unaligned: 4 + 8 + 12 = 24 bytes
+	Total aligned: 24 bytes (already 4-byte aligned)
 
 This matches the actual encoding in getMultiReportsOIDChunk where each TLV contains
 nested URR_ID (u32) and URR_SEID (u64) attributes.
@@ -374,7 +378,27 @@ func decodeUSAReport(b []byte) (*USAReport, error) {
 		case UR_URRID:
 			report.URRID = native.Uint32(b[n:attrLen])
 		case UR_USAGE_REPORT_TRIGGER:
-			report.USARTrigger = native.Uint32(b[n:attrLen])
+			// WNC: CRITICAL ENDIANNESS FIX
+			// WNC: Root cause: The kernel (gtp5g/src/genl/genl_report.c) encodes USAR_TRIGGER
+			// WNC: with nla_put_be32() which uses big-endian (network byte order), but this code
+			// WNC: was decoding with native.Uint32() which is little-endian on x86_64.
+			// WNC:
+			// WNC: Impact on RS detection: When kernel sets USAR_TRIGGER_EVETH (bit 15 = 0x8000),
+			// WNC: the netlink TLV contains bytes [0x00, 0x80, 0x00, 0x00] in big-endian.
+			// WNC: Little-endian decode reads this as 0x00008000 (correct bit 15).
+			// WNC: But wait - that's backwards! Let me recalculate:
+			// WNC:   Big-endian 0x00008000 in memory: [00 00 80 00]
+			// WNC:   Little-endian read of [00 00 80 00]: 0x00800000 (bit 23, WRONG!)
+			// WNC: So the Eveth bit (bit 15) was being shifted to bit 23, causing it to be lost
+			// WNC: when masked with the 24-bit trigger field, breaking RS detection entirely.
+			current_value := native.Uint32(b[n:attrLen])       // Old incorrect little-endian
+			old_value := binary.BigEndian.Uint32(b[n:attrLen]) // Correct big-endian
+			report.USARTrigger = current_value
+
+			// WNC: Log raw bytes and both decoded values to show the endianness bug impact
+			log.Printf("[go-gtp5gnl] WNC: URR %d raw trigger bytes %x -> LE(current_value)=0x%08x BE(old_value)=0x%08x",
+				report.URRID, b[n:attrLen], current_value, old_value)
+
 		case UR_URSEQN:
 			report.URSEQN = native.Uint32(b[n:attrLen])
 		case UR_VOLUME_MEASUREMENT:
