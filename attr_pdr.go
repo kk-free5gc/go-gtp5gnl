@@ -85,17 +85,23 @@ const (
 	PDI_F_TEID
 	PDI_SDF_FILTER
 	PDI_SRC_INTF
-	PDI_APP_ID // WNC: ApplicationID for RS monitoring
+	// WNC: ApplicationID for RS monitoring
+	PDI_APP_ID
 	PDI_ETHERNET_PACKET_FILTER
+	// WNC: 8 - u8 UE IPv6 prefix length; must match gtp5g include/genl_pdr.h
+	PDI_UE_ADDR_IPV6_PREFIX_LEN
 )
 
 type PDI struct {
-	SrcIntf       *uint8
-	UEAddr        net.IP
-	FTEID         *FTEID
-	SDF           *SDFFilter
-	EPFs          []EthPktFilter
-	ApplicationID string // WNC: ApplicationID for RS monitoring
+	SrcIntf *uint8
+	UEAddr  net.IP
+	// WNC: UE IPv6 prefix length (0 => default 64)
+	UEAddrIPv6PrefixLen uint8
+	FTEID               *FTEID
+	SDF                 *SDFFilter
+	EPFs                []EthPktFilter
+	// WNC: ApplicationID for RS monitoring
+	ApplicationID string
 }
 
 func DecodePDI(b []byte) (PDI, error) {
@@ -113,6 +119,9 @@ func DecodePDI(b []byte) (PDI, error) {
 		case PDI_UE_ADDR_IPV6: // WNC: Handle IPv6 UE address
 			pdi.UEAddr = make([]byte, 16)
 			copy(pdi.UEAddr, b[n:n+16])
+		case PDI_UE_ADDR_IPV6_PREFIX_LEN:
+			// WNC: UE IPv6 prefix length (u8)
+			pdi.UEAddrIPv6PrefixLen = b[n]
 		case PDI_F_TEID:
 			fteid, err := DecodeFTEID(b[n:attrLen])
 			if err != nil {
